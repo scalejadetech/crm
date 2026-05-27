@@ -13,7 +13,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Validate auth
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
@@ -36,7 +35,7 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    const { to, subject, htmlContent } = await req.json()
+    const { to, subject, htmlContent, smtpOverride } = await req.json()
 
     if (!to || !subject || !htmlContent) {
       return new Response(JSON.stringify({ error: 'Missing required fields: to, subject, htmlContent' }), {
@@ -45,22 +44,57 @@ Deno.serve(async (req: Request) => {
       })
     }
 
+    // Resolve SMTP: smtpOverride (test send) → user's saved config → env vars
+    let smtpHost: string
+    let smtpPort: number
+    let smtpSecure: boolean
+    let smtpUser: string
+    let smtpPass: string
+    let fromHeader: string
+
+    if (smtpOverride) {
+      smtpHost   = smtpOverride.host
+      smtpPort   = smtpOverride.port ?? 587
+      smtpSecure = smtpOverride.secure ?? false
+      smtpUser   = smtpOverride.username
+      smtpPass   = smtpOverride.password
+      const fn   = smtpOverride.fromName
+      const fe   = smtpOverride.fromEmail || smtpOverride.username
+      fromHeader = fn ? `"${fn}" <${fe}>` : fe
+    } else {
+      const { data: cfg } = await supabase
+        .schema('crm')
+        .from('smtp_configs')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle()
+
+      if (cfg && cfg.host) {
+        smtpHost   = cfg.host
+        smtpPort   = cfg.port
+        smtpSecure = cfg.secure
+        smtpUser   = cfg.username
+        smtpPass   = cfg.password
+        const fe   = cfg.from_email || cfg.username
+        fromHeader = cfg.from_name ? `"${cfg.from_name}" <${fe}>` : fe
+      } else {
+        smtpHost   = Deno.env.get('SMTP_HOST') ?? ''
+        smtpPort   = parseInt(Deno.env.get('SMTP_PORT') ?? '587')
+        smtpSecure = Deno.env.get('SMTP_PORT') === '465'
+        smtpUser   = Deno.env.get('SMTP_USER') ?? ''
+        smtpPass   = Deno.env.get('SMTP_PASS') ?? ''
+        fromHeader = `"CRM" <${smtpUser}>`
+      }
+    }
+
     const transporter = nodemailer.createTransport({
-      host: Deno.env.get('SMTP_HOST'),
-      port: parseInt(Deno.env.get('SMTP_PORT') ?? '587'),
-      secure: Deno.env.get('SMTP_PORT') === '465',
-      auth: {
-        user: Deno.env.get('SMTP_USER'),
-        pass: Deno.env.get('SMTP_PASS'),
-      },
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
+      auth: { user: smtpUser, pass: smtpPass },
     })
 
-    await transporter.sendMail({
-      from: `"CRM" <${Deno.env.get('SMTP_USER')}>`,
-      to,
-      subject,
-      html: htmlContent,
-    })
+    await transporter.sendMail({ from: fromHeader, to, subject, html: htmlContent })
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

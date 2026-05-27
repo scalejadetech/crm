@@ -114,6 +114,61 @@ CREATE POLICY "deals: owner full access"
   WITH CHECK (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────
+-- USER PROFILES  (mirror of auth.users)
+-- ─────────────────────────────────────────
+CREATE TABLE crm.user_profiles (
+  id         UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email      TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE crm.user_profiles ENABLE ROW LEVEL SECURITY;
+
+-- All authenticated users can see the list
+CREATE POLICY "user_profiles: authenticated read all"
+  ON crm.user_profiles FOR SELECT
+  USING (auth.role() = 'authenticated');
+
+-- Auto-create profile on signup
+CREATE OR REPLACE FUNCTION crm.handle_new_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  INSERT INTO crm.user_profiles (id, email, created_at)
+  VALUES (NEW.id, NEW.email, NEW.created_at)
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION crm.handle_new_user();
+
+-- ─────────────────────────────────────────
+-- SMTP CONFIGS  (per user)
+-- ─────────────────────────────────────────
+CREATE TABLE crm.smtp_configs (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  host       TEXT NOT NULL DEFAULT '',
+  port       INTEGER NOT NULL DEFAULT 587,
+  secure     BOOLEAN NOT NULL DEFAULT false,
+  username   TEXT NOT NULL DEFAULT '',
+  password   TEXT NOT NULL DEFAULT '',
+  from_name  TEXT NOT NULL DEFAULT '',
+  from_email TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE crm.smtp_configs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "smtp_configs: owner full access"
+  ON crm.smtp_configs FOR ALL
+  USING  (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────
 -- EMAIL TEMPLATES
 -- ─────────────────────────────────────────
 CREATE TABLE crm.email_templates (
@@ -142,3 +197,11 @@ CREATE INDEX ON crm.contacts(company_id);
 CREATE INDEX ON crm.deals(user_id);
 CREATE INDEX ON crm.deals(stage);
 CREATE INDEX ON crm.email_templates(user_id);
+CREATE INDEX ON crm.smtp_configs(user_id);
+
+-- ─────────────────────────────────────────
+-- BACKFILL existing auth users into profiles
+-- ─────────────────────────────────────────
+INSERT INTO crm.user_profiles (id, email, created_at)
+SELECT id, email, created_at FROM auth.users
+ON CONFLICT (id) DO NOTHING;

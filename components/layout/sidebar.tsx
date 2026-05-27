@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { toast } from 'sonner'
@@ -16,6 +16,7 @@ const navItems = [
   { href: '/dashboard/tags', label: 'Tags', icon: Tag },
   { href: '/dashboard/templates', label: 'Templates', icon: FileCode2 },
   { href: '/dashboard/storage', label: 'Storage', icon: HardDrive },
+  { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
 export function Sidebar() {

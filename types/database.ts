@@ -122,6 +122,66 @@ export interface Database {
         }
         Relationships: []
       }
+      user_profiles: {
+        Row: {
+          id: string
+          email: string
+          created_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
+      smtp_configs: {
+        Row: {
+          id: string
+          user_id: string
+          host: string
+          port: number
+          secure: boolean
+          username: string
+          password: string
+          from_name: string
+          from_email: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          host?: string
+          port?: number
+          secure?: boolean
+          username?: string
+          password?: string
+          from_name?: string
+          from_email?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          host?: string
+          port?: number
+          secure?: boolean
+          username?: string
+          password?: string
+          from_name?: string
+          from_email?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       email_templates: {
         Row: {
           id: string
@@ -194,6 +254,8 @@ export type ContactTag = Database['crm']['Tables']['contact_tags']['Row']
 export type Deal = Database['crm']['Tables']['deals']['Row']
 
 export type EmailTemplate = Database['crm']['Tables']['email_templates']['Row']
+export type SmtpConfig = Database['crm']['Tables']['smtp_configs']['Row']
+export type UserProfile = Database['crm']['Tables']['user_profiles']['Row']
 
 export type ContactWithRelations = Contact & {
   companies: Company | null
