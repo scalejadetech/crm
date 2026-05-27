@@ -114,6 +114,25 @@ CREATE POLICY "deals: owner full access"
   WITH CHECK (auth.uid() = user_id);
 
 -- ─────────────────────────────────────────
+-- EMAIL TEMPLATES
+-- ─────────────────────────────────────────
+CREATE TABLE crm.email_templates (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name         TEXT NOT NULL,
+  subject      TEXT NOT NULL DEFAULT '',
+  html_content TEXT NOT NULL DEFAULT '',
+  user_id      UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE crm.email_templates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "email_templates: owner full access"
+  ON crm.email_templates FOR ALL
+  USING  (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- ─────────────────────────────────────────
 -- INDEXES
 -- ─────────────────────────────────────────
 CREATE INDEX ON crm.tags(user_id);
@@ -122,3 +141,4 @@ CREATE INDEX ON crm.contacts(user_id);
 CREATE INDEX ON crm.contacts(company_id);
 CREATE INDEX ON crm.deals(user_id);
 CREATE INDEX ON crm.deals(stage);
+CREATE INDEX ON crm.email_templates(user_id);

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Users, Kanban, LayoutDashboard, Building2, HardDrive } from 'lucide-react'
+import { Users, Kanban, LayoutDashboard, Building2, FileCode2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -10,7 +10,7 @@ const navItems = [
   { href: '/dashboard/contacts', label: 'Contacts', icon: Users },
   { href: '/dashboard/companies', label: 'Companies', icon: Building2 },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
-  { href: '/dashboard/storage', label: 'Storage', icon: HardDrive },
+  { href: '/dashboard/templates', label: 'Templates', icon: FileCode2 },
 ]
 
 export function MobileNav() {

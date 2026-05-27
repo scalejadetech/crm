@@ -122,6 +122,33 @@ export interface Database {
         }
         Relationships: []
       }
+      email_templates: {
+        Row: {
+          id: string
+          name: string
+          subject: string
+          html_content: string
+          user_id: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          subject?: string
+          html_content?: string
+          user_id: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          subject?: string
+          html_content?: string
+          user_id?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       deals: {
         Row: {
           id: string
@@ -165,6 +192,8 @@ export type Company = Database['crm']['Tables']['companies']['Row']
 export type Contact = Database['crm']['Tables']['contacts']['Row']
 export type ContactTag = Database['crm']['Tables']['contact_tags']['Row']
 export type Deal = Database['crm']['Tables']['deals']['Row']
+
+export type EmailTemplate = Database['crm']['Tables']['email_templates']['Row']
 
 export type ContactWithRelations = Contact & {
   companies: Company | null

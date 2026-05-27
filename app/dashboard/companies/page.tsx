@@ -10,9 +10,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
+import { useRouter } from 'next/navigation'
 import {
   Plus, Search, Building2, Globe, Mail, Phone,
-  MapPin, Briefcase, Pencil, Trash2, Loader2, ChevronRight,
+  MapPin, Briefcase, Pencil, Trash2, Loader2,
 } from 'lucide-react'
 
 const INDUSTRIES = [
@@ -131,11 +132,15 @@ interface CompanyCardProps {
   company: Company & { _contactCount?: number }
   onEdit: () => void
   onDelete: () => void
+  onClick: () => void
 }
 
-function CompanyCard({ company, onEdit, onDelete }: CompanyCardProps) {
+function CompanyCard({ company, onEdit, onDelete, onClick }: CompanyCardProps) {
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors">
+    <div
+      className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer"
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
@@ -152,10 +157,16 @@ function CompanyCard({ company, onEdit, onDelete }: CompanyCardProps) {
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <button onClick={onEdit} className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors">
+          <button
+            onClick={e => { e.stopPropagation(); onEdit() }}
+            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          >
             <Pencil className="w-3.5 h-3.5" />
           </button>
-          <button onClick={onDelete} className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors">
+          <button
+            onClick={e => { e.stopPropagation(); onDelete() }}
+            className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+          >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -203,6 +214,7 @@ function CompanyCard({ company, onEdit, onDelete }: CompanyCardProps) {
 
 export default function CompaniesPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -279,6 +291,7 @@ export default function CompaniesPage() {
               company={company}
               onEdit={() => setEditCompany(company)}
               onDelete={() => handleDelete(company)}
+              onClick={() => router.push(`/dashboard/companies/detail?id=${company.id}`)}
             />
           ))}
         </div>

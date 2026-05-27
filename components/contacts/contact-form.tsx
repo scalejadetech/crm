@@ -15,18 +15,19 @@ import { toast } from 'sonner'
 
 interface Props {
   initial?: Contact & { contact_tags?: Array<{ tag_id: string }> }
+  defaultCompanyId?: string
   onSave: () => void
   onClose: () => void
 }
 
-export function ContactForm({ initial, onSave, onClose }: Props) {
+export function ContactForm({ initial, defaultCompanyId, onSave, onClose }: Props) {
   const { user } = useAuth()
   const [fullName, setFullName] = useState(initial?.full_name ?? '')
   const [email, setEmail] = useState(initial?.email ?? '')
   const [phone, setPhone] = useState(initial?.contact_number ?? '')
   const [linkedin, setLinkedin] = useState(initial?.linkedin_url ?? '')
   const [notes, setNotes] = useState(initial?.notes ?? '')
-  const [companyId, setCompanyId] = useState<string | null>(initial?.company_id ?? null)
+  const [companyId, setCompanyId] = useState<string | null>(initial?.company_id ?? defaultCompanyId ?? null)
   const [allTags, setAllTags] = useState<Tag[]>([])
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
     initial?.contact_tags?.map(ct => ct.tag_id) ?? []
@@ -107,10 +108,12 @@ export function ContactForm({ initial, onSave, onClose }: Props) {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Label>Company</Label>
-        <CompanyCombobox value={companyId} onSelect={setCompanyId} />
-      </div>
+      {!defaultCompanyId && (
+        <div className="space-y-1.5">
+          <Label>Company</Label>
+          <CompanyCombobox value={companyId} onSelect={setCompanyId} />
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label>Tags</Label>
