@@ -1,7 +1,29 @@
 @import "tailwindcss";
 
-:root {
-  color-scheme: dark;
+/* Tell Tailwind v4 to emit var() references so runtime CSS variables work */
+@theme inline {
+  --color-zinc-950: var(--zinc-950);
+  --color-zinc-900: var(--zinc-900);
+  --color-zinc-800: var(--zinc-800);
+  --color-zinc-700: var(--zinc-700);
+  --color-zinc-600: var(--zinc-600);
+  --color-zinc-500: var(--zinc-500);
+  --color-zinc-400: var(--zinc-400);
+  --color-zinc-300: var(--zinc-300);
+  --color-zinc-200: var(--zinc-200);
+  --color-zinc-100: var(--zinc-100);
+  --color-zinc-50:  var(--zinc-50);
+
+  --color-indigo-950: var(--indigo-950);
+  --color-indigo-900: var(--indigo-900);
+  --color-indigo-800: var(--indigo-800);
+  --color-indigo-700: var(--indigo-700);
+  --color-indigo-600: var(--indigo-600);
+  --color-indigo-500: var(--indigo-500);
+  --color-indigo-400: var(--indigo-400);
+  --color-indigo-300: var(--indigo-300);
+  --color-indigo-200: var(--indigo-200);
+  --color-indigo-100: var(--indigo-100);
 }
 
 * {
@@ -11,8 +33,6 @@
 
 html, body {
   height: 100%;
-  background-color: #09090b;
-  color: #f4f4f5;
 }
 
 html {
@@ -24,12 +44,90 @@ html {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: var(--zinc-900);
 }
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--zinc-700);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--zinc-600);
+}
+
+/* ── Dark theme (Claude Console) ── */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --zinc-950: #191919;
+  --zinc-900: #202020;
+  --zinc-800: #2a2a2a;
+  --zinc-700: #353535;
+  --zinc-600: #5a5a5a;
+  --zinc-500: #737373;
+  --zinc-400: #a0a0a0;
+  --zinc-300: #c4c4c4;
+  --zinc-200: #dedede;
+  --zinc-100: #efefef;
+  --zinc-50:  #f7f7f7;
+
+  --indigo-950: #2a1a2e;
+  --indigo-900: #3d2052;
+  --indigo-800: #5b3080;
+  --indigo-700: #7c4dab;
+  --indigo-600: #d97756;
+  --indigo-500: #e08a68;
+  --indigo-400: #e8a080;
+  --indigo-300: #f0b99a;
+  --indigo-200: #f7d3c0;
+  --indigo-100: #fbece5;
+}
+
+html[data-theme="dark"],
+html[data-theme="dark"] body {
+  background-color: #191919;
+  color: #efefef;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --zinc-950: #fafaf9;
+  --zinc-900: #f0ede8;
+  --zinc-800: #e2ddd7;
+  --zinc-700: #c8c3bc;
+  --zinc-600: #9b968e;
+  --zinc-500: #706b63;
+  --zinc-400: #5c5750;
+  --zinc-300: #3d3830;
+  --zinc-200: #2a2520;
+  --zinc-100: #1a1714;
+  --zinc-50:  #0d0b09;
+
+  --indigo-600: #c9613d;
+  --indigo-500: #d97757;
+  --indigo-400: #bf5a38;
+  --indigo-300: #a84f2c;
+  --indigo-200: #8c3e20;
+  --indigo-100: #fbece5;
+
+  --indigo-950: #2a1a2e;
+  --indigo-900: #3d2052;
+  --indigo-800: #5b3080;
+  --indigo-700: #7c4dab;
+}
+
+html[data-theme="light"],
+html[data-theme="light"] body {
+  background-color: #fafaf9;
+  color: #1a1714;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-track {
+  background: #e2ddd7;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #c8c3bc;
 }

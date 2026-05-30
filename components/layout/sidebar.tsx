@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight, Settings, Sun, Moon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
+import { useTheme } from '@/lib/theme-context'
 import { toast } from 'sonner'
 import { useState } from 'react'
 
@@ -23,6 +24,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const { signOut, user } = useAuth()
+  const { theme, toggleTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
 
   const handleSignOut = async () => {
@@ -90,6 +92,19 @@ export function Sidebar() {
             <span className="text-xs text-zinc-400 truncate">{user?.email}</span>
           </div>
         )}
+        <button
+          onClick={toggleTheme}
+          title={collapsed ? (theme === 'dark' ? 'Light mode' : 'Dark mode') : undefined}
+          className={cn(
+            'flex items-center w-full rounded-lg text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors',
+            collapsed ? 'justify-center px-2 py-2.5' : 'gap-2 px-3 py-2'
+          )}
+        >
+          {theme === 'dark'
+            ? <Sun className="w-4 h-4 shrink-0" />
+            : <Moon className="w-4 h-4 shrink-0" />}
+          {!collapsed && (theme === 'dark' ? 'Light mode' : 'Dark mode')}
+        </button>
         <button
           onClick={handleSignOut}
           title={collapsed ? 'Sign out' : undefined}
