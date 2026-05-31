@@ -45,7 +45,6 @@ export function ContactProfile() {
       .from('contacts')
       .select('*, companies(*), contact_tags(tag_id, tags(*))')
       .eq('id', id)
-      .eq('user_id', user.id)
       .single()
     if (error) { toast.error('Contact not found'); router.push('/dashboard/contacts') }
     else setContact(data as ContactWithRelations)

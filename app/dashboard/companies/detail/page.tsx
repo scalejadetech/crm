@@ -30,8 +30,8 @@ export default function CompanyDetailPage() {
   const fetchData = useCallback(async () => {
     if (!user || !id) return
     const [companyRes, contactsRes] = await Promise.all([
-      supabase.schema('crm').from('companies').select('*').eq('id', id).eq('user_id', user.id).single(),
-      supabase.schema('crm').from('contacts').select('*').eq('company_id', id).eq('user_id', user.id).order('full_name'),
+      supabase.schema('crm').from('companies').select('*').eq('id', id).single(),
+      supabase.schema('crm').from('contacts').select('*').eq('company_id', id).order('full_name'),
     ])
     if (companyRes.error) {
       toast.error('Company not found')

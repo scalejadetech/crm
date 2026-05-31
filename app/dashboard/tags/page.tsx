@@ -112,7 +112,6 @@ export default function TagsPage() {
     const { data, error } = await supabase.schema('crm')
       .from('tags')
       .select('*')
-      .eq('user_id', user.id)
       .order('name')
     if (error) toast.error(error.message)
     else setTags(data ?? [])

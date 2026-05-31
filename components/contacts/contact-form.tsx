@@ -36,7 +36,7 @@ export function ContactForm({ initial, defaultCompanyId, onSave, onClose }: Prop
 
   useEffect(() => {
     if (!user) return
-    supabase.schema('crm').from('tags').select('*').eq('user_id', user.id).order('name').then(({ data }) => {
+    supabase.schema('crm').from('tags').select('*').order('name').then(({ data }) => {
       setAllTags(data ?? [])
     })
   }, [user])

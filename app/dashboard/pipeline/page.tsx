@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { Plus, Loader2, DollarSign, ChevronRight, Trash2 } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { Plus, Loader2, DollarSign, ChevronRight, Trash2, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const STAGES: DealStage[] = ['Lead', 'Discovery', 'Proposal', 'Negotiation', 'Won', 'Lost']
@@ -37,13 +38,14 @@ function AddDealForm({ onSave, onClose }: { onSave: () => void; onClose: () => v
   const [title, setTitle] = useState('')
   const [value, setValue] = useState('')
   const [stage, setStage] = useState<DealStage>('Lead')
+  const [notes, setNotes] = useState('')
   const [contactId, setContactId] = useState('')
   const [contacts, setContacts] = useState<ContactWithRelations[]>([])
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!user) return
-    supabase.schema('crm').from('contacts').select('*, companies(*)').eq('user_id', user.id).order('full_name').then(({ data }) => {
+    supabase.schema('crm').from('contacts').select('*, companies(*)').order('full_name').then(({ data }) => {
       setContacts((data as ContactWithRelations[]) ?? [])
     })
   }, [user])
@@ -54,6 +56,7 @@ function AddDealForm({ onSave, onClose }: { onSave: () => void; onClose: () => v
     setSaving(true)
     const { error } = await supabase.schema('crm').from('deals').insert({
       title, value: parseFloat(value) || 0, stage,
+      notes: notes.trim() || null,
       contact_id: contactId || null, user_id: user.id,
     })
     if (error) toast.error(error.message)
@@ -82,6 +85,10 @@ function AddDealForm({ onSave, onClose }: { onSave: () => void; onClose: () => v
             {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Notes</Label>
+        <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any notes or context about this deal..." rows={3} />
       </div>
       <div className="space-y-1.5">
         <Label>Contact</Label>
@@ -143,6 +150,12 @@ function DealCard({
           {deal.contacts.companies ? ` · ${deal.contacts.companies.name}` : ''}
         </p>
       )}
+      {deal.notes && (
+        <p className="flex items-start gap-1 text-xs text-zinc-500 mt-1.5 line-clamp-2 leading-relaxed">
+          <FileText className="w-3 h-3 shrink-0 mt-0.5" />
+          {deal.notes}
+        </p>
+      )}
 
       <div className="flex items-center gap-1 mt-2">
         {currentIndex > 0 && (
@@ -180,7 +193,6 @@ export default function PipelinePage() {
     const { data, error } = await supabase.schema('crm')
       .from('deals')
       .select('*, contacts(*, companies(*))')
-      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
     if (error) toast.error(error.message)
     else setDeals((data as DealWithRelations[]) ?? [])

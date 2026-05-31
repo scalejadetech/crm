@@ -175,7 +175,6 @@ export default function TemplatesPage() {
     const { data, error } = await supabase.schema('crm')
       .from('email_templates')
       .select('*')
-      .eq('user_id', user.id)
       .order('created_at', { ascending: false })
     if (error) toast.error(error.message)
     else setTemplates(data ?? [])

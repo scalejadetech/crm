@@ -30,12 +30,11 @@ export function CompanyCombobox({ value, onSelect }: Props) {
   }, [value])
 
   useEffect(() => {
-    if (!user || query.length < 1) { setCompanies([]); return }
+    if (query.length < 1) { setCompanies([]); return }
     const timer = setTimeout(async () => {
       const { data } = await supabase.schema('crm')
         .from('companies')
         .select('*')
-        .eq('user_id', user.id)
         .ilike('name', `%${query}%`)
         .limit(8)
       setCompanies(data ?? [])

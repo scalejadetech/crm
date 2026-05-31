@@ -20,10 +20,10 @@ export default function DashboardPage() {
     if (!user) return
     const fetchStats = async () => {
       const [contacts, companies, deals, tags] = await Promise.all([
-        supabase.schema('crm').from('contacts').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.schema('crm').from('companies').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.schema('crm').from('deals').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.schema('crm').from('tags').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.schema('crm').from('contacts').select('id', { count: 'exact', head: true }),
+        supabase.schema('crm').from('companies').select('id', { count: 'exact', head: true }),
+        supabase.schema('crm').from('deals').select('id', { count: 'exact', head: true }),
+        supabase.schema('crm').from('tags').select('id', { count: 'exact', head: true }),
       ])
       setStats({
         contacts: contacts.count ?? 0,

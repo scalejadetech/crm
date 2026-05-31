@@ -248,6 +248,7 @@ export interface Database {
           title: string
           value: number
           stage: DealStage
+          notes: string | null
           contact_id: string | null
           user_id: string
           created_at: string
@@ -257,6 +258,7 @@ export interface Database {
           title: string
           value?: number
           stage?: DealStage
+          notes?: string | null
           contact_id?: string | null
           user_id: string
           created_at?: string
@@ -266,6 +268,7 @@ export interface Database {
           title?: string
           value?: number
           stage?: DealStage
+          notes?: string | null
           contact_id?: string | null
           user_id?: string
           created_at?: string

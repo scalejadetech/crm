@@ -40,7 +40,6 @@ function ContactPicker({ onAdd, onClose }: { onAdd: (r: Recipient[]) => void; on
     supabase.schema('crm')
       .from('contacts')
       .select('*, companies(*), contact_tags(*, tags(*))')
-      .eq('user_id', user.id)
       .order('full_name')
       .then(({ data }) => { setContacts((data as ContactWithRelations[]) ?? []); setLoading(false) })
   }, [user])
@@ -111,7 +110,7 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
 
   useEffect(() => {
     if (!user) return
-    supabase.schema('crm').from('email_templates').select('*').eq('user_id', user.id).order('name')
+    supabase.schema('crm').from('email_templates').select('*').order('name')
       .then(({ data }) => setTemplates(data ?? []))
   }, [user])
 

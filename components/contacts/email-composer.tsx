@@ -40,7 +40,7 @@ export function EmailComposer({ contact, onSent }: Props) {
 
   useEffect(() => {
     if (!user) return
-    supabase.schema('crm').from('email_templates').select('*').eq('user_id', user.id).order('name').then(({ data }) => {
+    supabase.schema('crm').from('email_templates').select('*').order('name').then(({ data }) => {
       setTemplates(data ?? [])
     })
   }, [user])

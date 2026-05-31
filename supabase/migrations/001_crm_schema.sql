@@ -21,10 +21,10 @@ CREATE TABLE crm.tags (
 
 ALTER TABLE crm.tags ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "tags: owner full access"
+CREATE POLICY "tags: authenticated full access"
   ON crm.tags FOR ALL
-  USING  (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────
 -- COMPANIES
@@ -44,10 +44,10 @@ CREATE TABLE crm.companies (
 
 ALTER TABLE crm.companies ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "companies: owner full access"
+CREATE POLICY "companies: authenticated full access"
   ON crm.companies FOR ALL
-  USING  (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────
 -- CONTACTS
@@ -67,10 +67,10 @@ CREATE TABLE crm.contacts (
 
 ALTER TABLE crm.contacts ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "contacts: owner full access"
+CREATE POLICY "contacts: authenticated full access"
   ON crm.contacts FOR ALL
-  USING  (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────
 -- CONTACT_TAGS  (join table)
@@ -83,14 +83,10 @@ CREATE TABLE crm.contact_tags (
 
 ALTER TABLE crm.contact_tags ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "contact_tags: owner full access"
+CREATE POLICY "contact_tags: authenticated full access"
   ON crm.contact_tags FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM crm.contacts c
-      WHERE c.id = contact_id AND c.user_id = auth.uid()
-    )
-  );
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────
 -- DEALS
@@ -101,6 +97,7 @@ CREATE TABLE crm.deals (
   value      NUMERIC DEFAULT 0,
   stage      TEXT NOT NULL DEFAULT 'Lead'
                CHECK (stage IN ('Lead','Discovery','Proposal','Negotiation','Won','Lost')),
+  notes      TEXT,
   contact_id UUID REFERENCES crm.contacts(id) ON DELETE CASCADE,
   user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT now()
@@ -108,10 +105,10 @@ CREATE TABLE crm.deals (
 
 ALTER TABLE crm.deals ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "deals: owner full access"
+CREATE POLICY "deals: authenticated full access"
   ON crm.deals FOR ALL
-  USING  (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
 
 -- ─────────────────────────────────────────
 -- USER PROFILES  (mirror of auth.users)
@@ -145,7 +142,7 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION crm.handle_new_user();
 
 -- ─────────────────────────────────────────
--- SMTP CONFIGS  (per user)
+-- SMTP CONFIGS  (per user — personal credentials)
 -- ─────────────────────────────────────────
 CREATE TABLE crm.smtp_configs (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -182,8 +179,29 @@ CREATE TABLE crm.email_templates (
 
 ALTER TABLE crm.email_templates ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "email_templates: owner full access"
+CREATE POLICY "email_templates: authenticated full access"
   ON crm.email_templates FOR ALL
+  USING  (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
+
+-- ─────────────────────────────────────────
+-- EMAIL DRAFTS  (per user — private)
+-- ─────────────────────────────────────────
+CREATE TABLE crm.email_drafts (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  subject    TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
+  is_html    BOOLEAN NOT NULL DEFAULT false,
+  recipients JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE crm.email_drafts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "email_drafts: owner full access"
+  ON crm.email_drafts FOR ALL
   USING  (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
@@ -198,6 +216,7 @@ CREATE INDEX ON crm.deals(user_id);
 CREATE INDEX ON crm.deals(stage);
 CREATE INDEX ON crm.email_templates(user_id);
 CREATE INDEX ON crm.smtp_configs(user_id);
+CREATE INDEX ON crm.email_drafts(user_id);
 
 -- ─────────────────────────────────────────
 -- BACKFILL existing auth users into profiles

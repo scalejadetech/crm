@@ -38,7 +38,6 @@ export default function ContactsPage() {
     const { data, error } = await supabase.schema('crm')
       .from('contacts')
       .select(`*, companies(*), contact_tags(tag_id, tags(*))`)
-      .eq('user_id', user.id)
       .order('full_name')
     if (error) toast.error(error.message)
     else setContacts((data as ContactWithRelations[]) ?? [])

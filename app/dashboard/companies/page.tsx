@@ -240,7 +240,6 @@ export default function CompaniesPage() {
     const { data, error } = await supabase.schema('crm')
       .from('companies')
       .select('*, contacts(count)')
-      .eq('user_id', user.id)
       .order('name')
 
     if (error) { toast.error(error.message); setLoading(false); return }
