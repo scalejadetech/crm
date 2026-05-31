@@ -209,6 +209,39 @@ export interface Database {
         }
         Relationships: []
       }
+      email_drafts: {
+        Row: {
+          id: string
+          user_id: string
+          subject: string
+          body: string
+          is_html: boolean
+          recipients: Array<{ contact_id: string | null; email: string; full_name: string }>
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          subject?: string
+          body?: string
+          is_html?: boolean
+          recipients?: Array<{ contact_id: string | null; email: string; full_name: string }>
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          subject?: string
+          body?: string
+          is_html?: boolean
+          recipients?: Array<{ contact_id: string | null; email: string; full_name: string }>
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       deals: {
         Row: {
           id: string
@@ -247,6 +280,7 @@ export interface Database {
   }
 }
 
+export type EmailDraft = Database['crm']['Tables']['email_drafts']['Row']
 export type Tag = Database['crm']['Tables']['tags']['Row']
 export type Company = Database['crm']['Tables']['companies']['Row']
 export type Contact = Database['crm']['Tables']['contacts']['Row']

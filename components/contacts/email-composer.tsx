@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
-import { Send, Loader2, Eye, Code2, FileCode2, X } from 'lucide-react'
+import { Send, Loader2, Eye, Code2, FileCode2, X, Save } from 'lucide-react'
 
 const VARIABLES = ['{{full_name}}', '{{email}}', '{{company_name}}', '{{contact_number}}']
 
@@ -33,6 +33,7 @@ export function EmailComposer({ contact, onSent }: Props) {
   const [isHtml, setIsHtml] = useState(false)
   const [preview, setPreview] = useState(false)
   const [sending, setSending] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<EmailTemplate | null>(null)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
@@ -62,6 +63,25 @@ export function EmailComposer({ contact, onSent }: Props) {
 
   const injectedSubject = injectVariables(subject, contact)
   const injectedBody = injectVariables(body, contact)
+
+  const handleSaveDraft = async () => {
+    if (!subject.trim() && !body.trim()) {
+      toast.error('Add a subject or body before saving')
+      return
+    }
+    if (!user) return
+    setSavingDraft(true)
+    const { error } = await supabase.schema('crm').from('email_drafts').insert({
+      user_id: user.id,
+      subject: subject.trim(),
+      body,
+      is_html: isHtml,
+      recipients: [{ contact_id: contact.id, email: contact.email, full_name: contact.full_name }],
+    })
+    if (error) toast.error(error.message)
+    else toast.success('Draft saved — visible in the Emails tab')
+    setSavingDraft(false)
+  }
 
   const handleSend = async () => {
     if (!subject.trim() || !body.trim()) {
@@ -230,10 +250,16 @@ export function EmailComposer({ contact, onSent }: Props) {
         </div>
       )}
 
-      <Button onClick={handleSend} disabled={sending} className="w-full">
-        {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        {sending ? 'Sending...' : 'Send Email'}
-      </Button>
+      <div className="flex gap-2">
+        <Button onClick={handleSaveDraft} disabled={savingDraft} variant="ghost" className="flex-1">
+          {savingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Save Draft
+        </Button>
+        <Button onClick={handleSend} disabled={sending} className="flex-1">
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {sending ? 'Sending...' : 'Send'}
+        </Button>
+      </div>
     </div>
   )
 }
