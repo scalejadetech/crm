@@ -131,3 +131,11 @@ html[data-theme="light"] ::-webkit-scrollbar-track {
 html[data-theme="light"] ::-webkit-scrollbar-thumb {
   background: #c8c3bc;
 }
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
