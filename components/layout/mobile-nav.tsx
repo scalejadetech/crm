@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Users, Tag, Kanban, LayoutDashboard, LogOut, Building2,
-  HardDrive, FileCode2, Settings, Sun, Moon, FileText, Mail, Menu, X,
+  HardDrive, FileCode2, Settings, Sun, Moon, FileText, Mail, Menu, X, Terminal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
@@ -23,6 +23,7 @@ const navItems = [
   { href: '/dashboard/md', label: 'Markdown', icon: FileText },
   { href: '/dashboard/storage', label: 'Storage', icon: HardDrive },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+  { href: '/dashboard/developer', label: 'Developer', icon: Terminal },
 ]
 
 export function MobileNav() {

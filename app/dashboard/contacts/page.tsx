@@ -34,7 +34,6 @@ export default function ContactsPage() {
   const [createOpen, setCreateOpen] = useState(false)
 
   const fetchContacts = useCallback(async () => {
-    if (!user) return
     const { data, error } = await supabase.schema('crm')
       .from('contacts')
       .select(`*, companies(*), contact_tags(tag_id, tags(*))`)
@@ -42,7 +41,7 @@ export default function ContactsPage() {
     if (error) toast.error(error.message)
     else setContacts((data as ContactWithRelations[]) ?? [])
     setLoading(false)
-  }, [user])
+  }, [])
 
   useEffect(() => { fetchContacts() }, [fetchContacts])
 

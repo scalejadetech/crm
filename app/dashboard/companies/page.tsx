@@ -233,10 +233,8 @@ export default function CompaniesPage() {
   const [editCompany, setEditCompany] = useState<Company | null>(null)
 
   const fetchCompanies = useCallback(async () => {
-    if (!user) return
     setLoading(true)
 
-    // Fetch companies + contact counts in one query via embedded count
     const { data, error } = await supabase.schema('crm')
       .from('companies')
       .select('*, contacts(count)')
@@ -251,7 +249,7 @@ export default function CompaniesPage() {
 
     setCompanies(mapped)
     setLoading(false)
-  }, [user])
+  }, [])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 

@@ -108,7 +108,6 @@ export default function TagsPage() {
   const [editTag, setEditTag] = useState<Tag | null>(null)
 
   const fetchTags = async () => {
-    if (!user) return
     const { data, error } = await supabase.schema('crm')
       .from('tags')
       .select('*')
@@ -118,7 +117,7 @@ export default function TagsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { fetchTags() }, [user])
+  useEffect(() => { fetchTags() }, [])
 
   const handleCreate = async (name: string, color: string) => {
     if (!user) return

@@ -44,11 +44,10 @@ function AddDealForm({ onSave, onClose }: { onSave: () => void; onClose: () => v
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!user) return
     supabase.schema('crm').from('contacts').select('*, companies(*)').order('full_name').then(({ data }) => {
       setContacts((data as ContactWithRelations[]) ?? [])
     })
-  }, [user])
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,7 +188,6 @@ export default function PipelinePage() {
   const [createOpen, setCreateOpen] = useState(false)
 
   const fetchDeals = useCallback(async () => {
-    if (!user) return
     const { data, error } = await supabase.schema('crm')
       .from('deals')
       .select('*, contacts(*, companies(*))')
@@ -197,7 +195,7 @@ export default function PipelinePage() {
     if (error) toast.error(error.message)
     else setDeals((data as DealWithRelations[]) ?? [])
     setLoading(false)
-  }, [user])
+  }, [])
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 

@@ -15,13 +15,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={geist.variable} data-theme="dark" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('crm-theme');document.documentElement.setAttribute('data-theme',t==='light'?'light':'dark');}catch(e){}})();`,
-          }}
-        />
-      </head>
+      <head />
       <body className="h-full font-sans antialiased bg-zinc-950 text-zinc-100">
         <ThemeProvider>
           <AuthProvider>

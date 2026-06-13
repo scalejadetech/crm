@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import type { EmailDraft, ContactWithRelations, EmailTemplate } from '@/types/database'
@@ -11,9 +11,10 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import {
   Send, Loader2, Trash2, Eye, Code2, FileCode2, X,
-  Plus, Users, Mail, ChevronDown, ChevronUp,
+  Plus, Users, Mail, ChevronDown, ChevronUp, Upload, Pencil,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import * as XLSX from 'xlsx'
 
 type Recipient = { contact_id: string | null; email: string; full_name: string }
 
@@ -107,6 +108,63 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
   const [saving, setSaving] = useState(false)
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const xlsxInputRef = useRef<HTMLInputElement>(null)
+
+  const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target!.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const sheet = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { defval: '' })
+
+        if (rows.length === 0) { toast.error('The file is empty.'); return }
+
+        // Read subject, body, is_html from first row
+        const first = rows[0]
+        const getCol = (row: Record<string, string>, ...keys: string[]) =>
+          Object.entries(row).find(([k]) => keys.includes(k.toLowerCase()))?.[1]?.trim() ?? ''
+
+        const importedSubject = getCol(first, 'subject')
+        const importedBody = getCol(first, 'body', 'message', 'content')
+
+        const imported: Recipient[] = []
+        const skipped: string[] = []
+
+        for (const row of rows) {
+          const email = getCol(row, 'email')
+          const full_name = getCol(row, 'full_name', 'name') || email
+
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            if (email) skipped.push(email)
+            continue
+          }
+          imported.push({ contact_id: null, email, full_name })
+        }
+
+        if (imported.length === 0) {
+          toast.error('No valid emails found. Ensure your file has an "email" column.')
+        } else {
+          if (importedSubject) setSubject(importedSubject)
+          if (importedBody) setBody(importedBody)
+          addRecipients(imported)
+          setOpen(true)
+          toast.success(
+            skipped.length > 0
+              ? `Imported ${imported.length} recipients, skipped ${skipped.length} invalid`
+              : `Imported ${imported.length} recipient${imported.length !== 1 ? 's' : ''} — review and save as draft`
+          )
+        }
+      } catch {
+        toast.error('Failed to parse file. Make sure it is a valid .xlsx or .csv file.')
+      }
+      e.target.value = ''
+    }
+    reader.readAsArrayBuffer(file)
+  }
 
   useEffect(() => {
     if (!user) return
@@ -156,10 +214,23 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Recipients</Label>
-              <button type="button" onClick={() => setShowPicker(true)}
-                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Add from contacts
-              </button>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setShowPicker(true)}
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> Add from contacts
+                </button>
+                <button type="button" onClick={() => xlsxInputRef.current?.click()}
+                  className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                  <Upload className="w-3.5 h-3.5" /> Import XLSX
+                </button>
+                <input
+                  ref={xlsxInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={handleXlsxImport}
+                />
+              </div>
             </div>
             {recipients.length === 0
               ? <p className="text-xs text-zinc-600 italic">No recipients yet</p>
@@ -277,6 +348,125 @@ function DraftPreview({ draft, onClose }: { draft: EmailDraft; onClose: () => vo
   )
 }
 
+// ─── Edit draft modal ─────────────────────────────────────────────────────────
+
+function EditDraftModal({ draft, onSaved, onClose }: { draft: EmailDraft; onSaved: () => void; onClose: () => void }) {
+  const { user } = useAuth()
+  const [subject, setSubject] = useState(draft.subject)
+  const [body, setBody] = useState(draft.body)
+  const [isHtml, setIsHtml] = useState(draft.is_html)
+  const [preview, setPreview] = useState(false)
+  const [recipients, setRecipients] = useState<Recipient[]>(draft.recipients)
+  const [showPicker, setShowPicker] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const removeRecipient = (email: string) => setRecipients(prev => prev.filter(r => r.email !== email))
+
+  const addRecipients = (incoming: Recipient[]) => {
+    setRecipients(prev => {
+      const existing = new Set(prev.map(r => r.email))
+      return [...prev, ...incoming.filter(r => !existing.has(r.email))]
+    })
+  }
+
+  const handleSave = async () => {
+    if (!subject.trim() || !body.trim()) { toast.error('Subject and body are required'); return }
+    if (recipients.length === 0) { toast.error('Add at least one recipient'); return }
+    if (!user) return
+    setSaving(true)
+    const { error } = await supabase.schema('crm').from('email_drafts').update({
+      subject: subject.trim(), body, is_html: isHtml, recipients,
+    }).eq('id', draft.id)
+    if (error) toast.error(error.message)
+    else { toast.success('Draft updated'); onSaved(); onClose() }
+    setSaving(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+          <h3 className="font-semibold text-zinc-100 flex items-center gap-2"><Pencil className="w-4 h-4 text-indigo-400" /> Edit draft</h3>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X className="w-4 h-4" /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Recipients */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Recipients</Label>
+              <button type="button" onClick={() => setShowPicker(true)}
+                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                <Plus className="w-3.5 h-3.5" /> Add from contacts
+              </button>
+            </div>
+            {recipients.length === 0
+              ? <p className="text-xs text-zinc-600 italic">No recipients yet</p>
+              : <div className="flex flex-wrap gap-1.5">
+                  {recipients.map(r => (
+                    <span key={r.email} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-xs text-zinc-300">
+                      {r.full_name}
+                      <button onClick={() => removeRecipient(r.email)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+            }
+          </div>
+
+          {!isHtml && (
+            <div>
+              <p className="text-xs text-zinc-500 mb-2">Insert variable:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {VARIABLES.map(v => (
+                  <button key={v} type="button" onClick={() => setBody(prev => prev + v)}
+                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-indigo-400 rounded-md px-2 py-1 font-mono transition-colors">{v}</button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <Label>Subject</Label>
+            <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject line..." />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>{isHtml ? 'Body (HTML)' : 'Body'}</Label>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setIsHtml(p => !p)}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+                  <FileCode2 className="w-3.5 h-3.5" />{isHtml ? 'Plain text' : 'HTML'}
+                </button>
+                <button type="button" onClick={() => setPreview(p => !p)}
+                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+                  {preview ? <><Code2 className="w-3.5 h-3.5" /> Edit</> : <><Eye className="w-3.5 h-3.5" /> Preview</>}
+                </button>
+              </div>
+            </div>
+            {preview
+              ? isHtml
+                ? <iframe srcDoc={body} sandbox="allow-same-origin" title="Preview" className="w-full h-64 rounded-lg border border-zinc-700 bg-white" />
+                : <div className="min-h-[160px] rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap">{body || <span className="text-zinc-600 italic">Nothing to preview</span>}</div>
+              : isHtml
+                ? <textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
+                : <Textarea value={body} onChange={e => setBody(e.target.value)} placeholder={`Dear {{full_name}},\n\n...`} rows={6} />
+            }
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-zinc-800">
+          <Button onClick={handleSave} disabled={saving} className="w-full">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+            Save changes
+          </Button>
+        </div>
+      </div>
+      {showPicker && <ContactPicker onAdd={addRecipients} onClose={() => setShowPicker(false)} />}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EmailsPage() {
@@ -287,6 +477,7 @@ export default function EmailsPage() {
   const [sending, setSending] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [preview, setPreview] = useState<EmailDraft | null>(null)
+  const [editingDraft, setEditingDraft] = useState<EmailDraft | null>(null)
 
   const fetchDrafts = useCallback(async () => {
     if (!user) return
@@ -395,11 +586,12 @@ export default function EmailsPage() {
 
         {/* Header row */}
         {drafts.length > 0 && (
-          <div className="grid grid-cols-[2.5rem_1fr_6rem_5rem] px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500 font-medium">
+          <div className="grid grid-cols-[2.5rem_1fr_6rem_5rem_2.5rem] px-4 py-2 border-b border-zinc-800 text-xs text-zinc-500 font-medium">
             <div />
             <div>Subject / Recipients</div>
             <div className="text-center">Recipients</div>
             <div className="text-right">Date</div>
+            <div />
           </div>
         )}
 
@@ -417,7 +609,7 @@ export default function EmailsPage() {
             const isSelected = selected.has(draft.id)
             return (
               <div key={draft.id}
-                className={`grid grid-cols-[2.5rem_1fr_6rem_5rem] items-center px-4 py-3 border-b border-zinc-800 last:border-0 transition-colors
+                className={`grid grid-cols-[2.5rem_1fr_6rem_5rem_2.5rem] items-center px-4 py-3 border-b border-zinc-800 last:border-0 transition-colors
                   ${isSelected ? 'bg-indigo-950/30' : 'hover:bg-zinc-800/40'}`}>
                 {/* Toggle */}
                 <div className="flex items-center">
@@ -452,6 +644,14 @@ export default function EmailsPage() {
                 <div className="text-right text-xs text-zinc-500">
                   {format(new Date(draft.created_at), 'MMM d')}
                 </div>
+
+                {/* Edit */}
+                <div className="flex justify-end">
+                  <button type="button" onClick={e => { e.stopPropagation(); setEditingDraft(draft) }}
+                    className="text-zinc-500 hover:text-indigo-400 transition-colors p-1 rounded">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             )
           })
@@ -459,6 +659,7 @@ export default function EmailsPage() {
       </div>
 
       {preview && <DraftPreview draft={preview} onClose={() => setPreview(null)} />}
+      {editingDraft && <EditDraftModal draft={editingDraft} onSaved={fetchDrafts} onClose={() => setEditingDraft(null)} />}
     </div>
   )
 }

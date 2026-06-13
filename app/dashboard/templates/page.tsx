@@ -171,7 +171,6 @@ export default function TemplatesPage() {
   const [previewTemplate, setPreviewTemplate] = useState<EmailTemplate | null>(null)
 
   const fetchTemplates = useCallback(async () => {
-    if (!user) return
     const { data, error } = await supabase.schema('crm')
       .from('email_templates')
       .select('*')
@@ -179,7 +178,7 @@ export default function TemplatesPage() {
     if (error) toast.error(error.message)
     else setTemplates(data ?? [])
     setLoading(false)
-  }, [user])
+  }, [])
 
   useEffect(() => { fetchTemplates() }, [fetchTemplates])
 

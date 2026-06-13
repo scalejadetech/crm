@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight, Settings, Sun, Moon, FileText, Mail } from 'lucide-react'
+import { Users, Tag, Kanban, LayoutDashboard, LogOut, Building2, HardDrive, FileCode2, ChevronLeft, ChevronRight, Settings, Sun, Moon, FileText, Mail, Terminal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth-context'
 import { useTheme } from '@/lib/theme-context'
@@ -20,6 +20,10 @@ const navItems = [
   { href: '/dashboard/md', label: 'Markdown', icon: FileText },
   { href: '/dashboard/storage', label: 'Storage', icon: HardDrive },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+]
+
+const externalItems = [
+  { href: '/docs', label: 'API Docs', icon: Terminal },
 ]
 
 export function Sidebar() {
@@ -82,6 +86,25 @@ export function Sidebar() {
             </Link>
           )
         })}
+
+        {!collapsed && <div className="my-2 border-t border-zinc-800" />}
+
+        {externalItems.map(({ href, label, icon: Icon }) => (
+          <a
+            key={href}
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={collapsed ? label : undefined}
+            className={cn(
+              'flex items-center rounded-lg text-sm font-medium transition-colors text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
+              collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5',
+            )}
+          >
+            <Icon className="w-4 h-4 shrink-0" />
+            {!collapsed && label}
+          </a>
+        ))}
       </nav>
 
       {/* User + sign out */}
