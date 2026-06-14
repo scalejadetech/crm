@@ -13,6 +13,7 @@ Every request must include a `user_id` parameter — as a query param for `GET`,
 | Companies | `/api/companies` |
 | Email Drafts | `/api/emails` |
 | Email Templates | `/api/templates` |
+| Template Upload (Markdown) | `/api/templates/upload` |
 
 ## Common Parameters
 
