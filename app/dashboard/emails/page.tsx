@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from 'sonner'
 import {
   Send, Loader2, Trash2, Eye, Code2, FileCode2, X,
-  Plus, Users, Mail, ChevronDown, ChevronUp, Upload, Pencil,
+  Plus, Users, Mail, ChevronDown, ChevronUp, Upload, Pencil, Download, FileSpreadsheet,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
@@ -25,6 +25,45 @@ function injectVariables(template: string, r: Recipient): string {
     .replace(/\{\{full_name\}\}/g, r.full_name)
     .replace(/\{\{email\}\}/g, r.email)
     .replace(/\{\{company_name\}\}/g, '')
+}
+
+// ─── Import template ──────────────────────────────────────────────────────────
+// Columns recognised by handleXlsxImport. `subject` and `body` are read from the
+// first row only and pre-fill the composer; `email` (required) and `full_name`
+// are read from every row to build the recipient list.
+const TEMPLATE_ROWS = [
+  {
+    email: 'jane.doe@example.com',
+    full_name: 'Jane Doe',
+    subject: 'Quick question, {{full_name}}',
+    body: 'Hi {{full_name}},\n\nI wanted to reach out regarding...\n\nBest,\nYour Name',
+  },
+  { email: 'john.smith@example.com', full_name: 'John Smith', subject: '', body: '' },
+  { email: 'team@acme.com', full_name: 'Acme Team', subject: '', body: '' },
+]
+
+function buildTemplateSheet() {
+  return XLSX.utils.json_to_sheet(TEMPLATE_ROWS, {
+    header: ['email', 'full_name', 'subject', 'body'],
+  })
+}
+
+function downloadTemplate(format: 'xlsx' | 'csv') {
+  const ws = buildTemplateSheet()
+  if (format === 'xlsx') {
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Recipients')
+    XLSX.writeFile(wb, 'email-import-template.xlsx')
+    return
+  }
+  const csv = XLSX.utils.sheet_to_csv(ws)
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'email-import-template.csv'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ─── Contact picker modal ─────────────────────────────────────────────────────
@@ -108,6 +147,7 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
   const [saving, setSaving] = useState(false)
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false)
   const xlsxInputRef = useRef<HTMLInputElement>(null)
 
   const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -221,8 +261,32 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
                 </button>
                 <button type="button" onClick={() => xlsxInputRef.current?.click()}
                   className="flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
-                  <Upload className="w-3.5 h-3.5" /> Import XLSX
+                  <Upload className="w-3.5 h-3.5" /> Import XLSX / CSV
                 </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowTemplateMenu(p => !p)}
+                    className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+                    <Download className="w-3.5 h-3.5" /> Template
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                  {showTemplateMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowTemplateMenu(false)} />
+                      <div className="absolute right-0 mt-1 z-20 w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden">
+                        <button type="button"
+                          onClick={() => { downloadTemplate('xlsx'); setShowTemplateMenu(false) }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" /> Download .xlsx
+                        </button>
+                        <button type="button"
+                          onClick={() => { downloadTemplate('csv'); setShowTemplateMenu(false) }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-t border-zinc-800">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" /> Download .csv
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <input
                   ref={xlsxInputRef}
                   type="file"
@@ -233,7 +297,10 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
               </div>
             </div>
             {recipients.length === 0
-              ? <p className="text-xs text-zinc-600 italic">No recipients yet</p>
+              ? <p className="text-xs text-zinc-600 italic">
+                  No recipients yet — add from contacts or import an XLSX / CSV with an{' '}
+                  <span className="font-mono text-zinc-500">email</span> column (download the template above).
+                </p>
               : <div className="flex flex-wrap gap-1.5">
                   {recipients.map(r => (
                     <span key={r.email} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-xs text-zinc-300">
