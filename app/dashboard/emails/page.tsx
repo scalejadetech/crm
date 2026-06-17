@@ -28,24 +28,29 @@ function injectVariables(template: string, r: Recipient): string {
 }
 
 // ─── Import template ──────────────────────────────────────────────────────────
-// Columns recognised by handleXlsxImport. `subject` and `body` are read from the
-// first row only and pre-fill the composer; `email` (required) and `full_name`
-// are read from every row to build the recipient list.
+// Columns recognised by handleXlsxImport. Each row becomes its own draft (one
+// email per recipient) with its own subject and message. `email` is required.
+// {{name}} / {{company}} / {{email}} placeholders are filled in per row.
+const TEMPLATE_COLS = ['name', 'company', 'email', 'subject', 'message'] as const
 const TEMPLATE_ROWS = [
   {
+    name: 'Jane Doe',
+    company: 'Acme Inc',
     email: 'jane.doe@example.com',
-    full_name: 'Jane Doe',
-    subject: 'Quick question, {{full_name}}',
-    body: 'Hi {{full_name}},\n\nI wanted to reach out regarding...\n\nBest,\nYour Name',
+    subject: 'Quick question, {{name}}',
+    message: 'Hi {{name}},\n\nI wanted to reach out to {{company}} regarding...\n\nBest,\nYour Name',
   },
-  { email: 'john.smith@example.com', full_name: 'John Smith', subject: '', body: '' },
-  { email: 'team@acme.com', full_name: 'Acme Team', subject: '', body: '' },
+  {
+    name: 'John Smith',
+    company: 'Globex',
+    email: 'john.smith@example.com',
+    subject: 'Following up with {{company}}',
+    message: 'Hi {{name}},\n\nJust circling back...\n\nBest,\nYour Name',
+  },
 ]
 
 function buildTemplateSheet() {
-  return XLSX.utils.json_to_sheet(TEMPLATE_ROWS, {
-    header: ['email', 'full_name', 'subject', 'body'],
-  })
+  return XLSX.utils.json_to_sheet(TEMPLATE_ROWS, { header: [...TEMPLATE_COLS] })
 }
 
 function downloadTemplate(format: 'xlsx' | 'csv') {
@@ -152,9 +157,9 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
 
   const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
+    if (!file || !user) return
     const reader = new FileReader()
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const data = new Uint8Array(evt.target!.result as ArrayBuffer)
         const wb = XLSX.read(data, { type: 'array' })
@@ -163,40 +168,58 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
 
         if (rows.length === 0) { toast.error('The file is empty.'); return }
 
-        // Read subject, body, is_html from first row
-        const first = rows[0]
         const getCol = (row: Record<string, string>, ...keys: string[]) =>
-          Object.entries(row).find(([k]) => keys.includes(k.toLowerCase()))?.[1]?.trim() ?? ''
+          Object.entries(row).find(([k]) => keys.includes(k.trim().toLowerCase()))?.[1]?.toString().trim() ?? ''
 
-        const importedSubject = getCol(first, 'subject')
-        const importedBody = getCol(first, 'body', 'message', 'content')
+        const fill = (text: string, vars: Record<string, string>) =>
+          text
+            .replace(/\{\{\s*name\s*\}\}/gi, vars.name)
+            .replace(/\{\{\s*full_name\s*\}\}/gi, vars.name)
+            .replace(/\{\{\s*company(?:_name)?\s*\}\}/gi, vars.company)
+            .replace(/\{\{\s*email\s*\}\}/gi, vars.email)
 
-        const imported: Recipient[] = []
+        // One draft per row — each email is inserted individually.
+        const newDrafts: Array<{
+          user_id: string; subject: string; body: string; is_html: boolean; recipients: Recipient[]
+        }> = []
         const skipped: string[] = []
 
         for (const row of rows) {
           const email = getCol(row, 'email')
-          const full_name = getCol(row, 'full_name', 'name') || email
+          const name = getCol(row, 'name', 'full_name') || email
+          const company = getCol(row, 'company', 'company_name')
+          const subject = getCol(row, 'subject')
+          const message = getCol(row, 'message', 'body', 'content')
 
           if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             if (email) skipped.push(email)
             continue
           }
-          imported.push({ contact_id: null, email, full_name })
+
+          const vars = { name, company, email }
+          newDrafts.push({
+            user_id: user.id,
+            subject: fill(subject, vars),
+            body: fill(message, vars),
+            is_html: false,
+            recipients: [{ contact_id: null, email, full_name: name }],
+          })
         }
 
-        if (imported.length === 0) {
+        if (newDrafts.length === 0) {
           toast.error('No valid emails found. Ensure your file has an "email" column.')
         } else {
-          if (importedSubject) setSubject(importedSubject)
-          if (importedBody) setBody(importedBody)
-          addRecipients(imported)
-          setOpen(true)
-          toast.success(
-            skipped.length > 0
-              ? `Imported ${imported.length} recipients, skipped ${skipped.length} invalid`
-              : `Imported ${imported.length} recipient${imported.length !== 1 ? 's' : ''} — review and save as draft`
-          )
+          const { error } = await supabase.schema('crm').from('email_drafts').insert(newDrafts)
+          if (error) {
+            toast.error(error.message)
+          } else {
+            toast.success(
+              skipped.length > 0
+                ? `Created ${newDrafts.length} drafts, skipped ${skipped.length} invalid`
+                : `Created ${newDrafts.length} draft${newDrafts.length !== 1 ? 's' : ''} — one per email`
+            )
+            onSaved()
+          }
         }
       } catch {
         toast.error('Failed to parse file. Make sure it is a valid .xlsx or .csv file.')
@@ -298,8 +321,9 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
             </div>
             {recipients.length === 0
               ? <p className="text-xs text-zinc-600 italic">
-                  No recipients yet — add from contacts or import an XLSX / CSV with an{' '}
-                  <span className="font-mono text-zinc-500">email</span> column (download the template above).
+                  No recipients yet — add from contacts, or import an XLSX / CSV with columns{' '}
+                  <span className="font-mono text-zinc-500">name, company, email, subject, message</span>.
+                  Each row becomes its own draft (download the template above).
                 </p>
               : <div className="flex flex-wrap gap-1.5">
                   {recipients.map(r => (
