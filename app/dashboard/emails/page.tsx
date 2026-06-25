@@ -407,57 +407,57 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
   )
 }
 
-// ─── Draft preview drawer ─────────────────────────────────────────────────────
+// ─── Send a single draft to all its recipients ────────────────────────────────
 
-function DraftPreview({ draft, onClose }: { draft: EmailDraft; onClose: () => void }) {
-  const sample = draft.recipients[0] ?? { contact_id: null, email: '', full_name: '' }
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-          <div>
-            <p className="font-semibold text-zinc-100 truncate">{draft.subject || '(no subject)'}</p>
-            <p className="text-xs text-zinc-500 mt-0.5">{draft.recipients.length} recipient{draft.recipients.length !== 1 ? 's' : ''}</p>
-          </div>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors shrink-0"><X className="w-4 h-4" /></button>
-        </div>
-        <div className="px-4 py-3 border-b border-zinc-800 flex flex-wrap gap-1.5">
-          {draft.recipients.map(r => (
-            <span key={r.email} className="text-xs bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-zinc-300">
-              {r.full_name} &lt;{r.email}&gt;
-            </span>
-          ))}
-        </div>
-        <div className="flex-1 overflow-auto p-4">
-          {draft.is_html
-            ? <iframe srcDoc={injectVariables(draft.body, sample)} sandbox="allow-same-origin" title="Preview" className="w-full h-64 rounded-lg border border-zinc-700 bg-white" />
-            : <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm text-zinc-300 whitespace-pre-wrap">{draft.body}</div>
-          }
-        </div>
-      </div>
-    </div>
-  )
+async function sendDraft(draft: EmailDraft): Promise<{ ok: number; fail: number }> {
+  let ok = 0; let fail = 0
+  for (const recipient of draft.recipients) {
+    const htmlContent = draft.is_html
+      ? injectVariables(draft.body, recipient)
+      : injectVariables(draft.body, recipient).replace(/\n/g, '<br/>')
+    const { error } = await supabase.functions.invoke('send-custom-email', {
+      body: { to: recipient.email, subject: injectVariables(draft.subject, recipient), htmlContent },
+    })
+    if (error) { fail++; console.error(error) }
+    else {
+      ok++
+      if (recipient.contact_id) {
+        await supabase.schema('crm').from('contacts').update({ last_contacted_at: new Date().toISOString() }).eq('id', recipient.contact_id)
+      }
+    }
+  }
+  return { ok, fail }
 }
 
-// ─── Edit draft modal ─────────────────────────────────────────────────────────
+// ─── Draft preview / edit sidebar ─────────────────────────────────────────────
 
-function EditDraftModal({ draft, onSaved, onClose }: { draft: EmailDraft; onSaved: () => void; onClose: () => void }) {
+function DraftPreview({ draft, startInEdit = false, onClose, onChanged }: {
+  draft: EmailDraft
+  startInEdit?: boolean
+  onClose: () => void
+  onChanged: () => void | Promise<void>
+}) {
   const { user } = useAuth()
+  const [editing, setEditing] = useState(startInEdit)
+  const [sending, setSending] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  // Editable copy — also drives the read-only preview so saved edits show immediately.
   const [subject, setSubject] = useState(draft.subject)
   const [body, setBody] = useState(draft.body)
   const [isHtml, setIsHtml] = useState(draft.is_html)
-  const [preview, setPreview] = useState(false)
   const [recipients, setRecipients] = useState<Recipient[]>(draft.recipients)
   const [showPicker, setShowPicker] = useState(false)
-  const [saving, setSaving] = useState(false)
 
   const removeRecipient = (email: string) => setRecipients(prev => prev.filter(r => r.email !== email))
+  const addRecipients = (incoming: Recipient[]) => setRecipients(prev => {
+    const existing = new Set(prev.map(r => r.email))
+    return [...prev, ...incoming.filter(r => !existing.has(r.email))]
+  })
 
-  const addRecipients = (incoming: Recipient[]) => {
-    setRecipients(prev => {
-      const existing = new Set(prev.map(r => r.email))
-      return [...prev, ...incoming.filter(r => !existing.has(r.email))]
-    })
+  const resetEdits = () => {
+    setSubject(draft.subject); setBody(draft.body); setIsHtml(draft.is_html); setRecipients(draft.recipients)
   }
 
   const handleSave = async () => {
@@ -469,88 +469,151 @@ function EditDraftModal({ draft, onSaved, onClose }: { draft: EmailDraft; onSave
       subject: subject.trim(), body, is_html: isHtml, recipients,
     }).eq('id', draft.id)
     if (error) toast.error(error.message)
-    else { toast.success('Draft updated'); onSaved(); onClose() }
+    else { toast.success('Draft updated'); onChanged(); setEditing(false) }
     setSaving(false)
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+    const { error } = await supabase.schema('crm').from('email_drafts').delete().eq('id', draft.id)
+    if (error) { toast.error(error.message); setDeleting(false); return }
+    toast.success('Draft deleted')
+    await onChanged(); onClose()
+  }
+
+  const handleSend = async () => {
+    setSending(true)
+    const { ok, fail } = await sendDraft({ ...draft, subject, body, is_html: isHtml, recipients })
+    if (fail === 0) {
+      // all delivered — remove the draft and refresh, then close
+      await supabase.schema('crm').from('email_drafts').delete().eq('id', draft.id)
+      toast.success(`Sent ${ok} email${ok !== 1 ? 's' : ''}`)
+      await onChanged(); onClose()
+    } else {
+      // keep the draft so the failure can be retried
+      toast.error(`Sent ${ok}, failed ${fail} — draft kept`)
+      setSending(false)
+    }
+  }
+
+  const busy = sending || deleting || saving
+  const sample = recipients[0] ?? { contact_id: null, email: '', full_name: '' }
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-          <h3 className="font-semibold text-zinc-100 flex items-center gap-2"><Pencil className="w-4 h-4 text-indigo-400" /> Edit draft</h3>
-          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X className="w-4 h-4" /></button>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-zinc-900 border-l border-zinc-800 w-full md:w-[45vw] md:max-w-none h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-zinc-800">
+          <div className="min-w-0">
+            <p className="font-semibold text-zinc-100 truncate flex items-center gap-2">
+              {editing && <Pencil className="w-4 h-4 text-indigo-400 shrink-0" />}
+              {subject || '(no subject)'}
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">{recipients.length} recipient{recipients.length !== 1 ? 's' : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors shrink-0 mt-0.5"><X className="w-4 h-4" /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-          {/* Recipients */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Recipients</Label>
-              <button type="button" onClick={() => setShowPicker(true)}
-                className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Add from contacts
-              </button>
+        {editing ? (
+          /* ── Edit mode ── */
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Recipients</Label>
+                <button type="button" onClick={() => setShowPicker(true)}
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+                  <Plus className="w-3.5 h-3.5" /> Add from contacts
+                </button>
+              </div>
+              {recipients.length === 0
+                ? <p className="text-xs text-zinc-600 italic">No recipients yet</p>
+                : <div className="flex flex-wrap gap-1.5">
+                    {recipients.map(r => (
+                      <span key={r.email} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-xs text-zinc-300">
+                        {r.full_name}
+                        <button onClick={() => removeRecipient(r.email)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+              }
             </div>
-            {recipients.length === 0
-              ? <p className="text-xs text-zinc-600 italic">No recipients yet</p>
-              : <div className="flex flex-wrap gap-1.5">
-                  {recipients.map(r => (
-                    <span key={r.email} className="flex items-center gap-1.5 bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-xs text-zinc-300">
-                      {r.full_name}
-                      <button onClick={() => removeRecipient(r.email)} className="text-zinc-500 hover:text-zinc-200 transition-colors"><X className="w-3 h-3" /></button>
-                    </span>
+
+            {!isHtml && (
+              <div>
+                <p className="text-xs text-zinc-500 mb-2">Insert variable:</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {VARIABLES.map(v => (
+                    <button key={v} type="button" onClick={() => setBody(prev => prev + v)}
+                      className="text-xs bg-zinc-800 hover:bg-zinc-700 text-indigo-400 rounded-md px-2 py-1 font-mono transition-colors">{v}</button>
                   ))}
                 </div>
-            }
-          </div>
-
-          {!isHtml && (
-            <div>
-              <p className="text-xs text-zinc-500 mb-2">Insert variable:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {VARIABLES.map(v => (
-                  <button key={v} type="button" onClick={() => setBody(prev => prev + v)}
-                    className="text-xs bg-zinc-800 hover:bg-zinc-700 text-indigo-400 rounded-md px-2 py-1 font-mono transition-colors">{v}</button>
-                ))}
               </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label>Subject</Label>
+              <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject line..." />
             </div>
-          )}
 
-          <div className="space-y-1.5">
-            <Label>Subject</Label>
-            <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject line..." />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label>{isHtml ? 'Body (HTML)' : 'Body'}</Label>
-              <div className="flex items-center gap-2">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label>{isHtml ? 'Body (HTML)' : 'Body'}</Label>
                 <button type="button" onClick={() => setIsHtml(p => !p)}
                   className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
                   <FileCode2 className="w-3.5 h-3.5" />{isHtml ? 'Plain text' : 'HTML'}
                 </button>
-                <button type="button" onClick={() => setPreview(p => !p)}
-                  className="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
-                  {preview ? <><Code2 className="w-3.5 h-3.5" /> Edit</> : <><Eye className="w-3.5 h-3.5" /> Preview</>}
-                </button>
               </div>
+              {isHtml
+                ? <textarea value={body} onChange={e => setBody(e.target.value)} rows={10} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
+                : <Textarea value={body} onChange={e => setBody(e.target.value)} placeholder={`Dear {{full_name}},\n\n...`} rows={8} />
+              }
             </div>
-            {preview
-              ? isHtml
-                ? <iframe srcDoc={body} sandbox="allow-same-origin" title="Preview" className="w-full h-64 rounded-lg border border-zinc-700 bg-white" />
-                : <div className="min-h-[160px] rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap">{body || <span className="text-zinc-600 italic">Nothing to preview</span>}</div>
-              : isHtml
-                ? <textarea value={body} onChange={e => setBody(e.target.value)} rows={8} className="w-full rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-3 text-xs text-zinc-300 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y" />
-                : <Textarea value={body} onChange={e => setBody(e.target.value)} placeholder={`Dear {{full_name}},\n\n...`} rows={6} />
-            }
           </div>
-        </div>
+        ) : (
+          /* ── Read-only preview ── */
+          <>
+            <div className="px-4 py-3 border-b border-zinc-800 flex flex-wrap gap-1.5">
+              {recipients.map(r => (
+                <span key={r.email} className="text-xs bg-zinc-800 border border-zinc-700 rounded-full px-2.5 py-1 text-zinc-300">
+                  {r.full_name} &lt;{r.email}&gt;
+                </span>
+              ))}
+            </div>
+            <div className="flex-1 overflow-auto p-4 flex flex-col">
+              {isHtml
+                ? <iframe srcDoc={injectVariables(body, sample)} sandbox="allow-same-origin" title="Preview" className="w-full flex-1 min-h-64 rounded-lg border border-zinc-700 bg-white" />
+                : <div className="rounded-lg border border-zinc-700 bg-zinc-800 px-4 py-3 text-sm text-zinc-300 whitespace-pre-wrap">{body}</div>
+              }
+            </div>
+          </>
+        )}
 
-        <div className="px-4 py-3 border-t border-zinc-800">
-          <Button onClick={handleSave} disabled={saving} className="w-full">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
-            Save changes
-          </Button>
+        {/* Actions */}
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-zinc-800">
+          {editing ? (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => { resetEdits(); setEditing(false) }} disabled={busy}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={busy} className="ml-auto">
+                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                Save changes
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setEditing(true)} disabled={busy}>
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleDelete} disabled={busy}
+                className="text-red-400 hover:text-red-300 hover:bg-red-950/30">
+                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Delete
+              </Button>
+              <Button size="sm" onClick={handleSend} disabled={busy} className="ml-auto">
+                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                {sending ? 'Sending...' : 'Send'}
+              </Button>
+            </>
+          )}
         </div>
       </div>
       {showPicker && <ContactPicker onAdd={addRecipients} onClose={() => setShowPicker(false)} />}
@@ -568,7 +631,10 @@ export default function EmailsPage() {
   const [sending, setSending] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [preview, setPreview] = useState<EmailDraft | null>(null)
-  const [editingDraft, setEditingDraft] = useState<EmailDraft | null>(null)
+  const [previewEdit, setPreviewEdit] = useState(false)
+  const [sendProgress, setSendProgress] = useState<{ total: number; done: number; ok: number; fail: number } | null>(null)
+  const [sendErrors, setSendErrors] = useState<string[]>([])
+  const [sendMenuOpen, setSendMenuOpen] = useState(false)
 
   const fetchDrafts = useCallback(async () => {
     if (!user) return
@@ -596,13 +662,24 @@ export default function EmailsPage() {
     setDeleting(false)
   }
 
-  const handleSendSelected = async () => {
-    if (selected.size === 0) return
+  // Send a batch of drafts. Tracks live progress; fully-sent drafts are deleted,
+  // drafts with any failure are kept (trimmed to just the failed recipients) so a
+  // retry never re-sends to addresses that already succeeded.
+  const runSend = async (toSend: EmailDraft[]) => {
+    if (toSend.length === 0 || sending) return
+    const total = toSend.reduce((n, d) => n + d.recipients.length, 0)
+    if (total === 0) return
+
+    setSendMenuOpen(false)
     setSending(true)
-    const toSend = drafts.filter(d => selected.has(d.id))
-    let ok = 0; let fail = 0
+    setSendErrors([])
+    setSendProgress({ total, done: 0, ok: 0, fail: 0 })
+
+    let done = 0; let ok = 0; let fail = 0
+    const errors: string[] = []
 
     for (const draft of toSend) {
+      const failedRecipients: Recipient[] = []
       for (const recipient of draft.recipients) {
         const htmlContent = draft.is_html
           ? injectVariables(draft.body, recipient)
@@ -610,21 +687,39 @@ export default function EmailsPage() {
         const { error } = await supabase.functions.invoke('send-custom-email', {
           body: { to: recipient.email, subject: injectVariables(draft.subject, recipient), htmlContent },
         })
-        if (error) { fail++; console.error(error) }
-        else {
+        done++
+        if (error) {
+          fail++; failedRecipients.push(recipient)
+          errors.push(`${draft.subject || '(no subject)'} → ${recipient.email}: ${error.message}`)
+          console.error(error)
+        } else {
           ok++
           if (recipient.contact_id) {
             await supabase.schema('crm').from('contacts').update({ last_contacted_at: new Date().toISOString() }).eq('id', recipient.contact_id)
           }
         }
+        setSendProgress({ total, done, ok, fail })
+      }
+
+      if (failedRecipients.length === 0) {
+        await supabase.schema('crm').from('email_drafts').delete().eq('id', draft.id)
+      } else if (failedRecipients.length < draft.recipients.length) {
+        // partial success — keep draft but only with the recipients that failed
+        await supabase.schema('crm').from('email_drafts').update({ recipients: failedRecipients }).eq('id', draft.id)
       }
     }
 
-    await supabase.schema('crm').from('email_drafts').delete().in('id', [...selected])
     if (fail === 0) toast.success(`Sent ${ok} email${ok !== 1 ? 's' : ''}`)
-    else toast.error(`Sent ${ok}, failed ${fail}`)
-    setSelected(new Set()); fetchDrafts(); setSending(false)
+    else toast.error(`Sent ${ok}, failed ${fail} — failed drafts were kept`)
+
+    setSendErrors(errors)
+    setSelected(new Set())
+    await fetchDrafts()   // refresh list so sent (deleted) drafts disappear before we stop
+    setSending(false)
   }
+
+  const handleSendSelected = () => runSend(drafts.filter(d => selected.has(d.id)))
+  const handleSendTop = (n: number) => runSend(drafts.slice(0, n))
 
   const allSelected = drafts.length > 0 && selected.size === drafts.length
   const someSelected = selected.size > 0
@@ -660,20 +755,87 @@ export default function EmailsPage() {
             {someSelected && <span className="text-xs text-zinc-500">{selected.size} selected</span>}
           </div>
 
-          {someSelected && (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={handleDelete} disabled={deleting}
-                className="text-red-400 hover:text-red-300 hover:bg-red-950/30">
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Delete
-              </Button>
-              <Button size="sm" onClick={handleSendSelected} disabled={sending}>
-                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                {sending ? 'Sending...' : `Send ${selected.size}`}
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {someSelected && (
+              <>
+                <Button size="sm" variant="ghost" onClick={handleDelete} disabled={deleting || sending}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-950/30">
+                  {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  Delete
+                </Button>
+                <Button size="sm" onClick={handleSendSelected} disabled={sending}>
+                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  {sending ? 'Sending...' : `Send ${selected.size}`}
+                </Button>
+              </>
+            )}
+
+            {/* Send top N */}
+            {drafts.length > 0 && (
+              <div className="relative">
+                <Button size="sm" variant={someSelected ? 'ghost' : 'default'} onClick={() => setSendMenuOpen(o => !o)} disabled={sending}>
+                  <Send className="h-3.5 w-3.5" /> Send top <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+                {sendMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setSendMenuOpen(false)} />
+                    <div className="absolute right-0 mt-1 z-20 w-44 rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl py-1">
+                      {[5, 10, 50].filter(n => n < drafts.length).map(n => (
+                        <button key={n} type="button" onClick={() => handleSendTop(n)}
+                          className="w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
+                          Top {n} drafts
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => handleSendTop(drafts.length)}
+                        className="w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
+                        All {drafts.length} draft{drafts.length !== 1 ? 's' : ''}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Send progress */}
+        {sendProgress && (
+          <div className="px-4 py-3 border-b border-zinc-800 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-400 flex items-center gap-1.5">
+                {sending && <Loader2 className="h-3 w-3 animate-spin text-indigo-400" />}
+                {sending ? 'Sending…' : 'Done'} {sendProgress.done}/{sendProgress.total}
+              </span>
+              <span className="text-zinc-500">
+                <span className="text-emerald-400">{sendProgress.ok} sent</span>
+                {sendProgress.fail > 0 && <span className="text-red-400"> · {sendProgress.fail} failed</span>}
+                {' · '}{Math.round((sendProgress.done / sendProgress.total) * 100)}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div className="h-full bg-indigo-500 transition-all duration-300"
+                style={{ width: `${(sendProgress.done / sendProgress.total) * 100}%` }} />
+            </div>
+            {!sending && (
+              <button type="button" onClick={() => { setSendProgress(null); setSendErrors([]) }}
+                className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">Dismiss</button>
+            )}
+          </div>
+        )}
+
+        {/* Send errors — failed drafts were kept */}
+        {sendErrors.length > 0 && (
+          <div className="px-4 py-3 border-b border-zinc-800 bg-red-950/20">
+            <p className="text-xs font-medium text-red-400 mb-1.5 flex items-center gap-1.5">
+              <X className="h-3.5 w-3.5" /> {sendErrors.length} failed — kept as draft{sendErrors.length !== 1 ? 's' : ''}
+            </p>
+            <ul className="space-y-1 max-h-32 overflow-auto">
+              {sendErrors.map((e, i) => (
+                <li key={i} className="text-xs text-red-300/80 break-words">{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Header row */}
         {drafts.length > 0 && (
@@ -715,7 +877,7 @@ export default function EmailsPage() {
                 </div>
 
                 {/* Subject + recipient names */}
-                <button type="button" onClick={() => setPreview(draft)} className="text-left min-w-0 pr-4">
+                <button type="button" onClick={() => { setPreview(draft); setPreviewEdit(false) }} className="text-left min-w-0 pr-4">
                   <p className="text-sm font-medium text-zinc-200 truncate">
                     {draft.subject || <span className="italic text-zinc-500">(no subject)</span>}
                   </p>
@@ -738,7 +900,7 @@ export default function EmailsPage() {
 
                 {/* Edit */}
                 <div className="flex justify-end">
-                  <button type="button" onClick={e => { e.stopPropagation(); setEditingDraft(draft) }}
+                  <button type="button" onClick={e => { e.stopPropagation(); setPreview(draft); setPreviewEdit(true) }}
                     className="text-zinc-500 hover:text-indigo-400 transition-colors p-1 rounded">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
@@ -749,8 +911,15 @@ export default function EmailsPage() {
         )}
       </div>
 
-      {preview && <DraftPreview draft={preview} onClose={() => setPreview(null)} />}
-      {editingDraft && <EditDraftModal draft={editingDraft} onSaved={fetchDrafts} onClose={() => setEditingDraft(null)} />}
+      {preview && (
+        <DraftPreview
+          key={preview.id}
+          draft={preview}
+          startInEdit={previewEdit}
+          onClose={() => setPreview(null)}
+          onChanged={fetchDrafts}
+        />
+      )}
     </div>
   )
 }
