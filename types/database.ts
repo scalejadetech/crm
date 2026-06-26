@@ -216,7 +216,7 @@ export interface Database {
           subject: string
           body: string
           is_html: boolean
-          recipients: Array<{ contact_id: string | null; email: string; full_name: string }>
+          recipients: Array<{ contact_id: string | null; email: string; full_name: string; company?: string }>
           created_at: string
           updated_at: string
         }
@@ -226,7 +226,7 @@ export interface Database {
           subject?: string
           body?: string
           is_html?: boolean
-          recipients?: Array<{ contact_id: string | null; email: string; full_name: string }>
+          recipients?: Array<{ contact_id: string | null; email: string; full_name: string; company?: string }>
           created_at?: string
           updated_at?: string
         }
@@ -236,7 +236,7 @@ export interface Database {
           subject?: string
           body?: string
           is_html?: boolean
-          recipients?: Array<{ contact_id: string | null; email: string; full_name: string }>
+          recipients?: Array<{ contact_id: string | null; email: string; full_name: string; company?: string }>
           created_at?: string
           updated_at?: string
         }

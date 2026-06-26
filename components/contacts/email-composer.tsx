@@ -76,7 +76,7 @@ export function EmailComposer({ contact, onSent }: Props) {
       subject: subject.trim(),
       body,
       is_html: isHtml,
-      recipients: [{ contact_id: contact.id, email: contact.email, full_name: contact.full_name }],
+      recipients: [{ contact_id: contact.id, email: contact.email, full_name: contact.full_name, company: contact.companies?.name ?? '' }],
     })
     if (error) toast.error(error.message)
     else toast.success('Draft saved — visible in the Emails tab')

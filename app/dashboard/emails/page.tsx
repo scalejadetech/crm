@@ -16,7 +16,7 @@ import {
 import { format } from 'date-fns'
 import * as XLSX from 'xlsx'
 
-type Recipient = { contact_id: string | null; email: string; full_name: string }
+type Recipient = { contact_id: string | null; email: string; full_name: string; company?: string }
 
 const VARIABLES = ['{{full_name}}', '{{email}}', '{{company_name}}']
 
@@ -53,12 +53,11 @@ function buildTemplateSheet() {
   return XLSX.utils.json_to_sheet(TEMPLATE_ROWS, { header: [...TEMPLATE_COLS] })
 }
 
-function downloadTemplate(format: 'xlsx' | 'csv') {
-  const ws = buildTemplateSheet()
+function downloadSheet(ws: XLSX.WorkSheet, filename: string, format: 'xlsx' | 'csv') {
   if (format === 'xlsx') {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Recipients')
-    XLSX.writeFile(wb, 'email-import-template.xlsx')
+    XLSX.writeFile(wb, `${filename}.xlsx`)
     return
   }
   const csv = XLSX.utils.sheet_to_csv(ws)
@@ -66,9 +65,33 @@ function downloadTemplate(format: 'xlsx' | 'csv') {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'email-import-template.csv'
+  a.download = `${filename}.csv`
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function downloadTemplate(format: 'xlsx' | 'csv') {
+  downloadSheet(buildTemplateSheet(), 'email-import-template', format)
+}
+
+// Export drafts back into the same column schema as the import template — one
+// row per recipient, body kept raw so it round-trips through the importer.
+function downloadDrafts(
+  drafts: EmailDraft[],
+  companyByContactId: Map<string, string>,
+  format: 'xlsx' | 'csv',
+) {
+  const rows = drafts.flatMap(d =>
+    (d.recipients.length ? d.recipients : [{ contact_id: null, email: '', full_name: '' } as Recipient]).map(r => ({
+      name: r.full_name,
+      company: r.company || (r.contact_id ? companyByContactId.get(r.contact_id) ?? '' : ''),
+      email: r.email,
+      subject: d.subject,
+      message: d.body,
+    }))
+  )
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...TEMPLATE_COLS] })
+  downloadSheet(ws, 'email-drafts', format)
 }
 
 // ─── Contact picker modal ─────────────────────────────────────────────────────
@@ -99,7 +122,7 @@ function ContactPicker({ onAdd, onClose }: { onAdd: (r: Recipient[]) => void; on
   })
 
   const handleAdd = () => {
-    onAdd(contacts.filter(c => selected.has(c.id)).map(c => ({ contact_id: c.id, email: c.email, full_name: c.full_name })))
+    onAdd(contacts.filter(c => selected.has(c.id)).map(c => ({ contact_id: c.id, email: c.email, full_name: c.full_name, company: c.companies?.name ?? '' })))
     onClose()
   }
 
@@ -202,7 +225,7 @@ function ComposePanel({ onSaved }: { onSaved: () => void }) {
             subject: fill(subject, vars),
             body: fill(message, vars),
             is_html: false,
-            recipients: [{ contact_id: null, email, full_name: name }],
+            recipients: [{ contact_id: null, email, full_name: name, company }],
           })
         }
 
@@ -635,6 +658,7 @@ export default function EmailsPage() {
   const [sendProgress, setSendProgress] = useState<{ total: number; done: number; ok: number; fail: number } | null>(null)
   const [sendErrors, setSendErrors] = useState<string[]>([])
   const [sendMenuOpen, setSendMenuOpen] = useState(false)
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false)
 
   const fetchDrafts = useCallback(async () => {
     if (!user) return
@@ -721,6 +745,27 @@ export default function EmailsPage() {
   const handleSendSelected = () => runSend(drafts.filter(d => selected.has(d.id)))
   const handleSendTop = (n: number) => runSend(drafts.slice(0, n))
 
+  // Resolve company names from the CRM (contact_id → company.name) so the export
+  // fills the `company` column for recipients that came from contacts.
+  const handleExport = async (format: 'xlsx' | 'csv') => {
+    setDownloadMenuOpen(false)
+    const toExport = someSelected ? drafts.filter(d => selected.has(d.id)) : drafts
+    // Only look up older drafts whose recipients predate the stored `company` field.
+    const ids = [...new Set(toExport.flatMap(d =>
+      d.recipients.filter(r => r.contact_id && !r.company).map(r => r.contact_id as string)
+    ))]
+    const companyByContactId = new Map<string, string>()
+    if (ids.length > 0) {
+      const { data } = await supabase.schema('crm')
+        .from('contacts').select('id, companies(name)').in('id', ids)
+      for (const c of (data ?? []) as Array<{ id: string; companies: { name: string } | { name: string }[] | null }>) {
+        const company = Array.isArray(c.companies) ? c.companies[0] : c.companies
+        if (company?.name) companyByContactId.set(c.id, company.name)
+      }
+    }
+    downloadDrafts(toExport, companyByContactId, format)
+  }
+
   const allSelected = drafts.length > 0 && selected.size === drafts.length
   const someSelected = selected.size > 0
 
@@ -768,6 +813,32 @@ export default function EmailsPage() {
                   {sending ? 'Sending...' : `Send ${selected.size}`}
                 </Button>
               </>
+            )}
+
+            {/* Download drafts as template */}
+            {drafts.length > 0 && (
+              <div className="relative">
+                <Button size="sm" variant="ghost" onClick={() => setDownloadMenuOpen(o => !o)}>
+                  <Download className="h-3.5 w-3.5" /> {someSelected ? `Export ${selected.size}` : 'Export'} <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+                {downloadMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setDownloadMenuOpen(false)} />
+                    <div className="absolute right-0 mt-1 z-20 w-44 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-hidden">
+                      <button type="button"
+                        onClick={() => handleExport('xlsx')}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" /> Download .xlsx
+                      </button>
+                      <button type="button"
+                        onClick={() => handleExport('csv')}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-zinc-300 hover:bg-zinc-800 transition-colors border-t border-zinc-800">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" /> Download .csv
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
 
             {/* Send top N */}
